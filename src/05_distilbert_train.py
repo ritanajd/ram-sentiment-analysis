@@ -1,9 +1,21 @@
+#!/usr/bin/env python3
 """
-DistilBERT Fine-tuning for RAM Sentiment Analysis
-Model: distilbert-base-multilingual-cased
-Dataset: 1,664 reviews (3-class: Negative, Neutral, Positive)
+DistilBERT Fine-tuning for RAM Multilingual Sentiment Analysis.
+
+Model  : distilbert-base-multilingual-cased  (Sanh et al., 2019)
+Dataset: 1,664 reviews — 3-class (Negative, Neutral, Positive)
+
+Reads:  outputs/merged_labeled_3class.csv
+Writes: outputs/models/best_model.pt
+        outputs/results/distilbert_results.json
+        outputs/figures/13_confusion_matrix_distilbert.png
+        outputs/figures/14_distilbert_training_curves.png
+        outputs/figures/15_model_comparison_all.png
 """
-import os, json, warnings
+
+import os
+import json
+import warnings
 warnings.filterwarnings('ignore')
 
 import numpy as np
@@ -13,6 +25,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (classification_report, confusion_matrix,
                              accuracy_score, f1_score)
@@ -23,24 +36,30 @@ from transformers import (DistilBertTokenizerFast,
                           get_linear_schedule_with_warmup)
 from torch.optim import AdamW
 
-# ── Config ────────────────────────────────────────────────────────────────────
-DATA_PATH   = '/home/ubuntu/ram_thesis_project/outputs/merged_labeled_complete.csv'
-OUT_DIR     = '/home/ubuntu/ram_thesis_project/outputs/distilbert'
-VIZ_DIR     = '/home/ubuntu/ram_thesis_project/outputs/visualizations'
-MODEL_NAME  = 'distilbert-base-multilingual-cased'
-MAX_LEN     = 64
-BATCH_SIZE  = 8
-EPOCHS      = 3
-LR          = 2e-5
-SEED        = 42
+# ── Paths (all relative to repository root) ───────────────────────────────────
+REPO_ROOT   = Path(__file__).parent.parent
+OUTPUT_DIR  = REPO_ROOT / 'outputs'
+MODELS_DIR  = OUTPUT_DIR / 'models'
+RESULTS_DIR = OUTPUT_DIR / 'results'
+FIGURES_DIR = OUTPUT_DIR / 'figures'
+DATA_PATH   = OUTPUT_DIR / 'merged_labeled_3class.csv'
 
-os.makedirs(OUT_DIR, exist_ok=True)
-os.makedirs(VIZ_DIR, exist_ok=True)
+for d in [OUTPUT_DIR, MODELS_DIR, RESULTS_DIR, FIGURES_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+# ── Hyperparameters ───────────────────────────────────────────────────────────
+MODEL_NAME = 'distilbert-base-multilingual-cased'
+MAX_LEN    = 64
+BATCH_SIZE = 8
+EPOCHS     = 3
+LR         = 2e-5
+SEED       = 42
+
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
-LABEL_MAP   = {'Negative': 0, 'Neutral': 1, 'Positive': 2}
-ID2LABEL    = {0: 'Negative', 1: 'Neutral', 2: 'Positive'}
+LABEL_MAP = {'Negative': 0, 'Neutral': 1, 'Positive': 2}
+ID2LABEL  = {0: 'Negative', 1: 'Neutral', 2: 'Positive'}
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 print("Loading data...")
@@ -51,11 +70,10 @@ df = df[df['review_text'].str.len() > 5]
 df['label'] = df['sentiment_3'].map(LABEL_MAP)
 df = df.dropna(subset=['label'])
 df['label'] = df['label'].astype(int)
-
 print(f"Total samples: {len(df)}")
 print(df['sentiment_3'].value_counts())
 
-# ── Split ─────────────────────────────────────────────────────────────────────
+# ── Train / Val / Test split (70 / 15 / 15) ──────────────────────────────────
 X = df['review_text'].tolist()
 y = df['label'].tolist()
 
@@ -66,25 +84,29 @@ X_val, X_test, y_val, y_test = train_test_split(
 
 print(f"Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
 
-# ── Class weights ─────────────────────────────────────────────────────────────
+# ── Class weights (handle severe imbalance) ───────────────────────────────────
 classes = np.array([0, 1, 2])
 weights = compute_class_weight('balanced', classes=classes, y=y_train)
 class_weights = torch.tensor(weights, dtype=torch.float)
-print(f"Class weights: {weights}")
+print(f"Class weights: {dict(zip(['Negative','Neutral','Positive'], weights.round(4)))}")
 
-# ── Tokenizer ─────────────────────────────────────────────────────────────────
+# ── Tokenizer & Dataset ───────────────────────────────────────────────────────
 print("Loading tokenizer...")
 tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_NAME)
+
 
 class ReviewDataset(Dataset):
     def __init__(self, texts, labels):
         self.encodings = tokenizer(texts, truncation=True, padding=True,
                                    max_length=MAX_LEN, return_tensors='pt')
         self.labels = torch.tensor(labels, dtype=torch.long)
+
     def __len__(self):
         return len(self.labels)
+
     def __getitem__(self, idx):
         return {k: v[idx] for k, v in self.encodings.items()}, self.labels[idx]
+
 
 print("Tokenizing datasets...")
 train_ds = ReviewDataset(X_train, y_train)
@@ -100,28 +122,25 @@ print("Loading model...")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {device}")
 
-model = DistilBertForSequenceClassification.from_pretrained(
-    MODEL_NAME, num_labels=3)
+model = DistilBertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=3)
 model.to(device)
 class_weights = class_weights.to(device)
 
-optimizer = AdamW(model.parameters(), lr=LR, weight_decay=0.01)
+optimizer   = AdamW(model.parameters(), lr=LR, weight_decay=0.01)
 total_steps = len(train_loader) * EPOCHS
-scheduler = get_linear_schedule_with_warmup(
-    optimizer, num_warmup_steps=total_steps // 10,
+scheduler   = get_linear_schedule_with_warmup(
+    optimizer,
+    num_warmup_steps=total_steps // 10,
     num_training_steps=total_steps)
-
 loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
 
-# ── Training loop ─────────────────────────────────────────────────────────────
-train_losses, val_losses, val_accs = [], [], []
-
+# ── Evaluation helper ─────────────────────────────────────────────────────────
 def evaluate(loader):
     model.eval()
     all_preds, all_labels, total_loss = [], [], 0.0
     with torch.no_grad():
         for batch, labels in loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch  = {k: v.to(device) for k, v in batch.items()}
             labels = labels.to(device)
             outputs = model(**batch)
             loss = loss_fn(outputs.logits, labels)
@@ -133,15 +152,18 @@ def evaluate(loader):
     acc = accuracy_score(all_labels, all_preds)
     return avg_loss, acc, all_preds, all_labels
 
-best_val_loss = float('inf')
-best_model_path = os.path.join(OUT_DIR, 'best_model.pt')
+
+# ── Training loop ─────────────────────────────────────────────────────────────
+train_losses, val_losses, val_accs = [], [], []
+best_val_loss  = float('inf')
+best_model_path = MODELS_DIR / 'best_model.pt'
 
 print(f"\nStarting training for {EPOCHS} epochs...")
 for epoch in range(EPOCHS):
     model.train()
     epoch_loss = 0.0
     for step, (batch, labels) in enumerate(train_loader):
-        batch = {k: v.to(device) for k, v in batch.items()}
+        batch  = {k: v.to(device) for k, v in batch.items()}
         labels = labels.to(device)
         optimizer.zero_grad()
         outputs = model(**batch)
@@ -152,14 +174,16 @@ for epoch in range(EPOCHS):
         scheduler.step()
         epoch_loss += loss.item()
         if (step + 1) % 10 == 0:
-            print(f"  Epoch {epoch+1}/{EPOCHS} | Step {step+1}/{len(train_loader)} | Loss: {loss.item():.4f}")
+            print(f"  Epoch {epoch+1}/{EPOCHS} | Step {step+1}/{len(train_loader)} "
+                  f"| Loss: {loss.item():.4f}")
 
     avg_train_loss = epoch_loss / len(train_loader)
     val_loss, val_acc, _, _ = evaluate(val_loader)
     train_losses.append(avg_train_loss)
     val_losses.append(val_loss)
     val_accs.append(val_acc)
-    print(f"Epoch {epoch+1}: Train Loss={avg_train_loss:.4f} | Val Loss={val_loss:.4f} | Val Acc={val_acc:.4f}")
+    print(f"Epoch {epoch+1}: Train Loss={avg_train_loss:.4f} | "
+          f"Val Loss={val_loss:.4f} | Val Acc={val_acc:.4f}")
 
     if val_loss < best_val_loss:
         best_val_loss = val_loss
@@ -171,15 +195,15 @@ print("\nLoading best model for final evaluation...")
 model.load_state_dict(torch.load(best_model_path, map_location=device))
 test_loss, test_acc, test_preds, test_labels = evaluate(test_loader)
 
-report = classification_report(
+report      = classification_report(
     test_labels, test_preds,
     target_names=['Negative', 'Neutral', 'Positive'],
     output_dict=True)
-macro_f1 = f1_score(test_labels, test_preds, average='macro')
+macro_f1    = f1_score(test_labels, test_preds, average='macro')
 weighted_f1 = f1_score(test_labels, test_preds, average='weighted')
 
 print(f"\n{'='*60}")
-print(f"FINAL TEST RESULTS")
+print("FINAL TEST RESULTS")
 print(f"{'='*60}")
 print(f"Accuracy:    {test_acc*100:.2f}%")
 print(f"Macro F1:    {macro_f1:.4f}")
@@ -207,17 +231,18 @@ results = {
             'precision': round(report[cls]['precision'], 4),
             'recall':    round(report[cls]['recall'], 4),
             'f1':        round(report[cls]['f1-score'], 4),
-            'support':   int(report[cls]['support'])
+            'support':   int(report[cls]['support']),
         } for cls in ['Negative', 'Neutral', 'Positive']
     },
     'train_losses': [round(l, 4) for l in train_losses],
     'val_losses':   [round(l, 4) for l in val_losses],
-    'val_accs':     [round(a, 4) for a in val_accs]
+    'val_accs':     [round(a, 4) for a in val_accs],
 }
 
-with open(os.path.join(OUT_DIR, 'distilbert_results.json'), 'w') as f:
+results_path = RESULTS_DIR / 'distilbert_results.json'
+with open(results_path, 'w') as f:
     json.dump(results, f, indent=2)
-print(f"\nResults saved to {OUT_DIR}/distilbert_results.json")
+print(f"\nResults saved to {results_path}")
 
 # ── Confusion matrix figure ───────────────────────────────────────────────────
 cm = confusion_matrix(test_labels, test_preds)
@@ -229,9 +254,10 @@ ax.set_title('DistilBERT Confusion Matrix (Test Set)', fontsize=13, fontweight='
 ax.set_ylabel('True Label', fontsize=11)
 ax.set_xlabel('Predicted Label', fontsize=11)
 plt.tight_layout()
-plt.savefig(os.path.join(VIZ_DIR, '13_confusion_matrix_distilbert.png'), dpi=300, bbox_inches='tight')
+cm_path = FIGURES_DIR / '13_confusion_matrix_distilbert.png'
+plt.savefig(cm_path, dpi=300, bbox_inches='tight')
 plt.close()
-print("Confusion matrix saved.")
+print(f"Confusion matrix saved to {cm_path}")
 
 # ── Training curves ───────────────────────────────────────────────────────────
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
@@ -244,35 +270,40 @@ ax2.plot(epochs_range, val_accs, 'g-o', label='Val Accuracy')
 ax2.set_title('Validation Accuracy per Epoch', fontweight='bold')
 ax2.set_xlabel('Epoch'); ax2.set_ylabel('Accuracy'); ax2.legend()
 plt.tight_layout()
-plt.savefig(os.path.join(VIZ_DIR, '14_distilbert_training_curves.png'), dpi=300, bbox_inches='tight')
+curves_path = FIGURES_DIR / '14_distilbert_training_curves.png'
+plt.savefig(curves_path, dpi=300, bbox_inches='tight')
 plt.close()
-print("Training curves saved.")
+print(f"Training curves saved to {curves_path}")
 
 # ── Model comparison figure ───────────────────────────────────────────────────
-models = ['Logistic\nRegression', 'Linear\nSVM', 'DistilBERT\n(Multilingual)']
-accs   = [92.21, 93.03, round(test_acc * 100, 2)]
-f1s    = [0.5596, 0.5625, round(macro_f1, 4)]
+model_names = ['Logistic\nRegression', 'Linear\nSVM', 'DistilBERT\n(Multilingual)']
+accs_cmp    = [92.21, 93.03, round(test_acc * 100, 2)]
+f1s_cmp     = [0.5596, 0.5625, round(macro_f1, 4)]
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 colors = ['#4472C4', '#ED7D31', '#70AD47']
-bars1 = ax1.bar(models, accs, color=colors, edgecolor='black', linewidth=0.5)
+
+bars1 = ax1.bar(model_names, accs_cmp, color=colors, edgecolor='black', linewidth=0.5)
 ax1.set_title('Model Accuracy Comparison', fontsize=13, fontweight='bold')
 ax1.set_ylabel('Accuracy (%)', fontsize=11)
 ax1.set_ylim(80, 100)
-for bar, val in zip(bars1, accs):
-    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.2,
+for bar, val in zip(bars1, accs_cmp):
+    ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.2,
              f'{val:.2f}%', ha='center', va='bottom', fontweight='bold', fontsize=10)
-bars2 = ax2.bar(models, f1s, color=colors, edgecolor='black', linewidth=0.5)
+
+bars2 = ax2.bar(model_names, f1s_cmp, color=colors, edgecolor='black', linewidth=0.5)
 ax2.set_title('Macro F1-Score Comparison', fontsize=13, fontweight='bold')
 ax2.set_ylabel('Macro F1-Score', fontsize=11)
 ax2.set_ylim(0, 1.0)
-for bar, val in zip(bars2, f1s):
-    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+for bar, val in zip(bars2, f1s_cmp):
+    ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
              f'{val:.4f}', ha='center', va='bottom', fontweight='bold', fontsize=10)
+
 plt.tight_layout()
-plt.savefig(os.path.join(VIZ_DIR, '15_model_comparison_all.png'), dpi=300, bbox_inches='tight')
+cmp_path = FIGURES_DIR / '15_model_comparison_all.png'
+plt.savefig(cmp_path, dpi=300, bbox_inches='tight')
 plt.close()
-print("Model comparison figure saved.")
+print(f"Model comparison figure saved to {cmp_path}")
 
 print("\n✅ DistilBERT training complete!")
 print(f"   Accuracy: {test_acc*100:.2f}%")
