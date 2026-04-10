@@ -1,0 +1,54 @@
+{
+  "model": "distilbert-base-multilingual-cased",
+  "dataset_size": 1664,
+  "train_size": 1164,
+  "val_size": 250,
+  "test_size": 250,
+  "epochs": 3,
+  "batch_size": 8,
+  "learning_rate": 2e-05,
+  "max_len": 64,
+  "class_weights": {
+    "Negative": 0.3811,
+    "Neutral": 18.4762,
+    "Positive": 3.104
+  },
+  "accuracy_pct": 90.0,
+  "macro_f1": 0.5175,
+  "weighted_f1": 0.8938,
+  "per_class": {
+    "Negative": {
+      "precision": 0.9412,
+      "recall": 0.9498,
+      "f1": 0.9455,
+      "support": 219
+    },
+    "Neutral": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 4
+    },
+    "Positive": {
+      "precision": 0.5862,
+      "recall": 0.6296,
+      "f1": 0.6071,
+      "support": 27
+    }
+  },
+  "train_losses": [
+    0.9303,
+    0.8161,
+    0.7203
+  ],
+  "val_losses": [
+    0.8151,
+    0.7884,
+    0.8478
+  ],
+  "val_accs": [
+    0.908,
+    0.924,
+    0.936
+  ]
+}

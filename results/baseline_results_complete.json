@@ -1,0 +1,18 @@
+{
+  "dataset_size": 1622,
+  "test_set_size": 244,
+  "train_set_size": 1135,
+  "val_set_size": 243,
+  "logistic_regression": {
+    "accuracy": 0.9221311475409836,
+    "accuracy_pct": 92.21311475409836,
+    "macro_f1": 0.559563017109808,
+    "weighted_f1": 0.9169272928630781
+  },
+  "linear_svm": {
+    "accuracy": 0.930327868852459,
+    "accuracy_pct": 93.0327868852459,
+    "macro_f1": 0.5625308641975308,
+    "weighted_f1": 0.9184312386156649
+  }
+}

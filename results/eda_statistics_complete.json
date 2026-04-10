@@ -1,0 +1,20 @@
+{
+  "total_reviews": 1664,
+  "mean_rating": 1.3728966346153846,
+  "median_rating": 1.0,
+  "std_dev": 1.1312984675241373,
+  "negative_count": 1455,
+  "negative_pct": 87.43990384615384,
+  "neutral_count": 30,
+  "neutral_pct": 1.8028846153846152,
+  "positive_count": 145,
+  "positive_pct": 8.713942307692307,
+  "platform_distribution": {
+    "Trustpilot": 885,
+    "Skytrax": 379,
+    "TripAdvisor": 300,
+    "RAM/Trustpilot": 100
+  },
+  "mean_review_length": 625.6826923076923,
+  "mean_word_count": 109.98497596153847
+}
