@@ -1,9 +1,9 @@
 # Royal Air Maroc — Multilingual Sentiment Analysis Pipeline
 
 > **Thesis:** *A BERT-Based Multilingual Sentiment Analysis Pipeline for Royal Air Maroc: From Customer Reviews to Actionable Business Intelligence*
-> **Author:** Rita Najd
-> **Institution:** [University Name]
-> **Year:** 2024
+> **Author:** Rita Najeddine
+> **Institution:** IE University
+> **Year:** 2025
 
 ---
 
@@ -35,9 +35,8 @@ ram-sentiment-analysis/
 │   ├── 04_baselines.py         # TF-IDF + Logistic Regression + Linear SVM
 │   └── 05_distilbert_train.py  # DistilBERT fine-tuning and evaluation
 │
-├── figures/                    # All 15 high-resolution figures (300 DPI)
+├── figures/                    # All 17 high-resolution figures (300 DPI)
 ├── results/                    # JSON and CSV files with all metrics
-├── notebooks/                  # (Optional) Jupyter notebooks for exploration
 │
 ├── run_pipeline.py             # Master script — runs the full pipeline
 ├── requirements.txt            # Python dependencies
@@ -207,8 +206,8 @@ All figures are pre-generated in the `figures/` directory:
 If you use this code or data in your research, please cite:
 
 ```
-Najd, R. (2024). A BERT-Based Multilingual Sentiment Analysis Pipeline for Royal Air Maroc:
-From Customer Reviews to Actionable Business Intelligence. [Master's Thesis].
+Najeddine, R. (2025). A BERT-Based Multilingual Sentiment Analysis Pipeline for Royal Air Maroc:
+From Customer Reviews to Actionable Business Intelligence. [Bachelor's Thesis, IE University].
 ```
 
 ---
